@@ -1,0 +1,227 @@
+package main
+
+import (
+	"encoding/csv"
+	"encoding/json"
+	"fmt"
+	"io/ioutil"
+	"log"
+	"net/http"
+	"os"
+	"strconv"
+	"time"
+)
+
+type Ticker struct {
+	Symbol string
+	Price  string
+	//Price_in_float float64
+}
+
+const googleSheetsAPI string = "https://sheets.googleapis.com"
+
+//https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT
+func readCsvFile(filePath string) (records [][]string, f *os.File, err error) {
+	f, err = os.Open(filePath)
+	if err != nil {
+		log.Fatal("Unable to read input file "+filePath, err)
+		f.Close()
+		return nil, f, err
+	}
+	//defer f.Close()
+
+	csvReader := csv.NewReader(f)
+	csvReader.FieldsPerRecord = -1
+	records, err = csvReader.ReadAll()
+	fmt.Println(err)
+	if err != nil {
+		//fmt.Println("Here")
+		log.Fatal("Unable to parse file as CSV for "+filePath, err)
+		//fmt.Println("here")
+		return nil, f, err
+	}
+
+	return records, f, nil
+}
+
+func main() {
+	records, f, err := readCsvFile("../target.csv")
+	if err != nil {
+		log.Fatal("Couldn't open csv file ")
+		return
+	}
+	//fmt.Println(records)
+	/**
+	res, err := http.Get("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT")
+	if err != nil {
+		fmt.Println(err)
+		log.Fatal("Couldn't fetch data from Binance")
+		return
+	}
+	if err == nil {
+		val, err := ioutil.ReadAll(res.Body)
+		if err == nil {
+			fmt.Println(string(val))
+			var ticker Ticker
+			json.Unmarshal(val, &ticker)
+			fmt.Println(ticker.Price)
+
+		}
+	}
+
+	csvfile, err := os.Open("../target.csv")
+	writer := csv.NewWriter(csvfile)
+	**/
+	//fmt.Println(len(records), len(records[6]))
+	new_row := len(records[6])
+	//records = append(records, records[len(records)-1])
+	fmt.Println(len(records), len(records[6]))
+	t := time.Now()
+	fmt.Println(new_row)
+	records[6] = append(records[6], (fmt.Sprint(t.Day()) + string("/") + fmt.Sprint(t.Month()) + string("/") + fmt.Sprint(t.Year())))
+	//fmt.Println(records[6][new_column])
+	var dayChange float64 = 0
+	var dayChangeDone bool = false
+	var weeklyChange float64 = 0
+	var weeklyChangeDone bool = false
+	var monthlyChange float64 = 0
+	var monthlyChangeDone bool = false
+	var currentAssetValue float64 = 0
+	var totalProfits float64 = 0
+	for i := 7; i < len(records); i++ {
+		res, err := http.Get("https://api.binance.com/api/v3/ticker/price?symbol=" + string(records[i][0]) + "USDT")
+		var ticker Ticker
+		if err != nil {
+			fmt.Println(err)
+			log.Fatal("Couldn't fetch data from Binance")
+			return
+		}
+		if err == nil {
+			val, err := ioutil.ReadAll(res.Body)
+			if err == nil {
+				//fmt.Println(string(val))
+
+				json.Unmarshal(val, &ticker)
+				//fmt.Println(ticker.Price)
+			}
+		}
+		fmt.Println(ticker.Price, ticker.Symbol)
+		priceInFloat, err := strconv.ParseFloat(ticker.Price, 32)
+		if err != nil {
+			fmt.Println("Couldn't parse string to float64 Here")
+			log.Fatal(err)
+		}
+		quantityInFloat, err := strconv.ParseFloat(records[i][2], 8)
+		if err != nil {
+			fmt.Println("Couldn't parse string to float64 Here")
+			log.Fatal(err)
+		}
+		todaysValue := quantityInFloat * priceInFloat
+		currentAssetValue += todaysValue
+		fmt.Println(records[i])
+		todaysValueInString := fmt.Sprintf("%v", todaysValue)
+		boughtValue, err := strconv.ParseFloat(records[i][4], 32)
+		if err != nil {
+			fmt.Println("Couldn't parse string to float64 Here")
+			log.Fatal(err)
+		}
+		boughtValue = boughtValue * quantityInFloat
+		totalProfits = totalProfits + (todaysValue - boughtValue)
+		records[i] = append(records[i], todaysValueInString)
+		fmt.Println(new_row)
+		if new_row > 5 {
+			dayChangeDone = true
+
+			yesterdaysValue, err := strconv.ParseFloat(records[i][new_row-1], 8)
+			if err != nil {
+				fmt.Println("Couldn't parse string to float64")
+				log.Fatal(err)
+			}
+			dayChange += (todaysValue - yesterdaysValue)
+		}
+		if new_row > 12 {
+			weeklyChangeDone = true
+			lastWeeksValue, err := strconv.ParseFloat(records[i][new_row-7], 8)
+			if err != nil {
+				fmt.Println("Couldn't parse string to float64")
+				log.Fatal(err)
+			}
+			weeklyChange += (todaysValue - lastWeeksValue)
+		}
+		if new_row > 35 {
+			monthlyChangeDone = true
+			lastMonthsChange, err := strconv.ParseFloat(records[i][new_row-30], 8)
+			if err != nil {
+				fmt.Println("Couldn't parse string to float64")
+				log.Fatal(err)
+			}
+			monthlyChange += (todaysValue - lastMonthsChange)
+		}
+		if dayChangeDone == true {
+			if weeklyChangeDone == false {
+				weeklyChange = dayChange
+				monthlyChange = dayChange
+			} else if weeklyChangeDone == true && monthlyChangeDone == false {
+				monthlyChange = weeklyChange
+			}
+		}
+
+	}
+	fmt.Println(records)
+	/**
+	csvWriter := csv.NewWriter(f)
+	for i := 0; i < len(records); i++ {
+		for j := 0; j < len(records[i]); j++ {
+			//fmt.Println(records[i][j])
+			err := csvWriter.Write([]string{records[i][j]})
+			if err != nil {
+				fmt.Println(i, j, err)
+				log.Fatal(err)
+
+			}
+		}
+	}
+	**/
+	f.Close()
+	csvFile, err := os.Create("../target.csv")
+
+	if err != nil {
+		log.Fatalf("failed creating file: %s", err)
+	}
+
+	csvwriter := csv.NewWriter(csvFile)
+
+	for _, empRow := range records {
+		_ = csvwriter.Write(empRow)
+	}
+	csvwriter.Flush()
+	csvFile.Close()
+	/**
+	for i := 0; i < len(records); i++ {
+		err := csvWriter.Write(records[i])
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+	**/
+	//csvWriter.Flush()
+	fmt.Println(dayChange, weeklyChange, monthlyChange, currentAssetValue, totalProfits)
+	//f.Close()
+	/**
+	csvFile, err := os.Open("../target.csv")
+	if err != nil {
+		log.Fatalf("failed creating file: %s", err)
+	}
+
+	csvwriter := csv.NewWriter(csvFile)
+
+	for _, recordRow := range records {
+		_ = csvwriter.Write(recordRow)
+	}
+	csvwriter.Flush()
+	csvFile.Close()
+	**/
+	//fmt.Println(dayChange)
+	//fmt.Println(records)
+	return
+}
